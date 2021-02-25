@@ -16,6 +16,9 @@ $data = '';
 for ($i=0; $i < TESTING_PACKET_SIZE; $i++) {
     $data .= random_bytes(1);
 }
+$dataCrc = pack('V', crc32($data));
+echo 'Data crc: ', bin2hex($dataCrc), PHP_EOL;
+$data .= $dataCrc;
 
 /**
  * packet structure
@@ -49,20 +52,38 @@ if(! $sock) {
 }
 
 $parts = [];
-for($i = 0; $i < $packets; $i++)
-{
+for($i = 0; $i < $packets; $i++) {
     $number = $i << 16 | $packets;
     $packetData = substr($data, $i * PACKET_SIZE, PACKET_SIZE - 1);
     $packetDataLen = strlen($packetData);
     $crc = crc32($packetData);
     $packet = pack('VVvvVV', $pid, SERVER, $i, $packets, $crc, $packetDataLen) . $packetData;
 
-    if( ! socket_sendto($sock, $packet , strlen($packet) , 0 , $server , $port))
-	{
+    if( ! socket_sendto($sock, $packet , strlen($packet) , 0 , $server , $port)) {
 		$errorcode = socket_last_error();
 		$errormsg = socket_strerror($errorcode);
 		
 		die("Could not send data: [$errorcode] $errormsg \n");
 	}
+
+    echo $i, '/', $packets, ' ';
+
+    if(socket_recv ($sock, $reply , MAX_PACKET_SIZE , MSG_WAITALL ) === FALSE) {
+		$errorcode = socket_last_error();
+		$errormsg = socket_strerror($errorcode);
+		
+		die("Could not receive data: [$errorcode] $errormsg \n");
+	}
+
+    $parts = unpack('v', $reply);
+    $code = $parts[1];
+
+    $map = [
+        1 => 'OK',
+        2 => 'WRONG_LENGTH',
+        4 => 'WRONG_CRC',
+    ];
+
+    echo $map[$code] ?? 'unknown', PHP_EOL;
 }
 
