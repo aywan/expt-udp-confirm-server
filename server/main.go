@@ -8,7 +8,7 @@ import (
 	"net"
 )
 
-const maxPacketSize = 1400
+const maxPacketSize = 512
 const headerSize = 20
 const maxPacketDataSize = maxPacketSize - headerSize
 
@@ -41,7 +41,7 @@ func main() {
 func serve(pc net.PacketConn, addr net.Addr, buf []byte, ch pktSndChan) {
 	var crc uint32
 	msg := &Packet{}
-	response := make([]byte, 2)
+	response := make([]byte, 8)
 
 	reader := bytes.NewReader(buf)
 
@@ -52,7 +52,7 @@ func serve(pc net.PacketConn, addr net.Addr, buf []byte, ch pktSndChan) {
 	binary.Read(reader, binary.LittleEndian, &crc)
 	binary.Read(reader, binary.LittleEndian, &msg.Length)
 
-	log.Print("receive id=", msg.Pid, "/", msg.Server, " packet=", msg.Num, "/", msg.Total, " length=", msg.Length, " crc=", crc)
+	//log.Print("receive id=", msg.Pid, "/", msg.Server, " packet=", msg.Num, "/", msg.Total, " length=", msg.Length, " crc=", crc)
 	msg.Data = make([]byte, msg.Length)
 	n, _ := reader.Read(msg.Data)
 	if n < int(msg.Length) {
@@ -61,7 +61,10 @@ func serve(pc net.PacketConn, addr net.Addr, buf []byte, ch pktSndChan) {
 		binary.LittleEndian.PutUint16(response, wrongCrc)
 	} else {
 		ch <- msg
-		binary.LittleEndian.PutUint16(response, ok)
+		repCrc := crc % msg.Pid
+		binary.LittleEndian.PutUint16(response[0:2], ok)
+		binary.LittleEndian.PutUint16(response[2:4], msg.Num)
+		binary.LittleEndian.PutUint32(response[4:8], repCrc)
 	}
 	pc.WriteTo(response, addr)
 }

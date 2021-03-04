@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"sync"
 )
 
@@ -11,7 +12,7 @@ type pktRcvChan <-chan *Packet
 type msgSndChan chan<- *Message
 type msgRcvChan chan<- *Message
 
-var messages = make(map[uint64]*Message)
+var messages = sync.Map{} //make(map[uint64]*Message)
 var messageMtx = sync.Mutex{}
 
 func startPool() (pktSndChan, *sync.WaitGroup) {
@@ -30,24 +31,29 @@ func startPool() (pktSndChan, *sync.WaitGroup) {
 func packWorker(ch pktRcvChan, wg *sync.WaitGroup) {
 	for packet := range ch {
 		id := packet.getId()
-		msg, ok := messages[id]
+		var msg *Message
+		v, ok := messages.Load(id)
 		if ok {
+			msg = v.(*Message)
 			msg.Merge(packet)
 		} else {
 			messageMtx.Lock()
-			msg, ok := messages[id]
+			v, ok := messages.Load(id)
 			if ok {
+				msg = v.(*Message)
 				msg.Merge(packet)
 			} else {
-				msg := newMessage(packet)
-				messages[id] = msg
+				msg = newMessage(packet)
+				log.Printf("new packet %d\n", msg.Id)
+				messages.Store(id, msg)
 			}
 			messageMtx.Unlock()
 		}
-		msg = messages[id]
+
 		if msg.IsDone() {
 			messageMtx.Lock()
-			delete(messages[id])
+			log.Printf("paket done %d\n", msg.Id)
+			messages.Delete(id)
 
 			messageMtx.Unlock()
 		}
